@@ -1,4 +1,5 @@
-import logging 
+import logging
+import time 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
@@ -42,22 +43,36 @@ class Tracker():
         if len(self.tracks) == 0:
             # If there are no tracks, create a new track for each detection
             for detection in detections:
+                if len(detection['bounding_box']) == 0:
+                    continue
                 track = self.create_track(detection['bounding_box'], frame_id)
                 detection['track_id'] = track.track_id
                 
             return detections
         
+        # Filter out empty detections
+        other_detections = [detection for detection in detections if len(detection['bounding_box']) == 0]
+        detections = [detection for detection in detections if len(detection['bounding_box']) > 0]
+
         # Build the IoU matrix between tracks and detections
-        iou_matrix = np.zeros((len(detections), len(self.tracks)))
+        iou_matrix = np.zeros((len(self.tracks), len(detections)))
         
         # Calculate IoU for each track and detection
-        for i, detection in enumerate(detections):
-            for j, track in enumerate(self.tracks):
-                iou = self.calculate_iou(track.bounding_box, detection['bounding_box'])
-                logging.info("IOU for %d, %d: %f", i, j, iou)
-                iou_matrix[i,j] = 1 - iou
+        for i, track in enumerate(self.tracks):
+            for j, detection in enumerate(detections):
 
-        detection_indxs, tracks_indxs = linear_sum_assignment(iou_matrix)
+                if len(detection['bounding_box']) == 0:
+                    iou_matrix[i,j] = 0.0
+                else:
+                    iou = self.calculate_iou(track.bounding_box, detection['bounding_box'])
+                    if iou < 0.3:
+                        cost = 1e6
+                    else:
+                        cost = 1 - iou
+                    logging.info("IOU for %d, %d: %f", i, j, iou)
+                    iou_matrix[i, j] = cost
+
+        tracks_indxs, detection_indxs  = linear_sum_assignment(iou_matrix)
 
         for detection_ids, tracks_ids in zip(detection_indxs, tracks_indxs):
             detection = detections[detection_ids]
@@ -68,7 +83,9 @@ class Tracker():
             track.frame_id = frame_id
             
             detection['track_id'] = track.track_id
-            
+
+        detections = detections + other_detections
+        
         return detections
 
 
