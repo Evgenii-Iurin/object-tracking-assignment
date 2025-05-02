@@ -10,6 +10,7 @@ class Track():
         self.track_id = track_id
         self.bounding_box = bounding_box
         self.frame_id = frame_id
+        self.age = 0
 
 class Tracker():
     def __init__(self):
@@ -21,8 +22,10 @@ class Tracker():
         Create a new track with the given bounding box and frame ID
         """
         track = Track(self.track_id, bounding_box, frame_id)
+        track.age += 1
         self.tracks.append(track)
         self.track_id += 1
+        logging.info("Created new track with ID: %d", track.track_id)
         return track
     
     def process_frame(self, detections, frame_id):
@@ -72,22 +75,53 @@ class Tracker():
                     logging.info("IOU for %d, %d: %f", i, j, iou)
                     iou_matrix[i, j] = cost
 
-        tracks_indxs, detection_indxs  = linear_sum_assignment(iou_matrix)
+        matched_tracks_idxs, matched_detections_idxs  = linear_sum_assignment(iou_matrix)
 
-        for detection_ids, tracks_ids in zip(detection_indxs, tracks_indxs):
-            detection = detections[detection_ids]
-            track = self.tracks[tracks_ids]
+        for track_idx, detection_idx in zip(matched_tracks_idxs, matched_detections_idxs):
+            detection = detections[detection_idx]
+            track = self.tracks[track_idx]
 
             # Update the track with the new bounding box
             track.bounding_box = detection['bounding_box']
             track.frame_id = frame_id
+            track.age += 1
             
             detection['track_id'] = track.track_id
 
-        detections = detections + other_detections
+        # ========== Filter out old tracks ==================
+        # Filter all tracks that are older then 5 frames and not matched
+        time_threshold = 5
+        filtered_tracks = [
+            track for track in self.tracks if 
+            not (track.age < (frame_id - time_threshold)) and 
+            not (track.track_id in matched_tracks_idxs) 
+            ]
         
-        return detections
+        # Get all matched tracks
+        matched_tracks = [
+            track for track in self.tracks if 
+            track.track_id in matched_tracks_idxs
+            ]
+        
+        self.tracks = filtered_tracks + matched_tracks 
+        
+        logging.info("Tracks after filtering: %d", len(self.tracks))            
+    
+        # ====== Create new tracks for unmatched detections ======
+        unmatched_detections = [detection for i, detection in enumerate(detections) if i not in matched_detections_idxs]
+        for detection in unmatched_detections:
+            if len(detection['bounding_box']) == 0:
+                continue
+            # Create a new track for the unmatched detection
+            track = self.create_track(detection['bounding_box'], frame_id)
+            track.age += 1
+            detection['track_id'] = track.track_id
 
+        logging.info("Tracks after creating new ones: %d", len(self.tracks))
+
+        detections = detections + other_detections
+            
+        return detections
 
 
     def calculate_iou(self, box1, box2):
