@@ -28,10 +28,11 @@ def metric_fn(data) -> float:
                 continue
             grand_truth = detection['cb_id']
             track_id = detection['track_id']
+            frame_id = detections['frame_id']
             correct += 1 if grand_truth == track_id else 0
             num_detections += 1
             
-            logging.info("Detection: Grand Truth: %s, Track ID: %s", grand_truth, track_id)
+            logging.info("Frame %d : Grand Truth: %s, Track ID: %s", frame_id, grand_truth, track_id)
             
             
     precision = correct / num_detections if num_detections > 0 else 0
