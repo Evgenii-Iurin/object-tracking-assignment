@@ -1,5 +1,4 @@
 import logging
-import time 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
@@ -59,7 +58,7 @@ class Tracker():
         # Build the IoU matrix between tracks and detections
         iou_matrix = np.zeros((len(self.tracks), len(detections)))
         
-        # Calculate IoU for each track and detection
+        # ========== Calculate IoU for each track and detection pair ==========
         for i, track in enumerate(self.tracks):
             for j, detection in enumerate(detections):
 
@@ -70,8 +69,10 @@ class Tracker():
                     iou_matrix[i, j] = (1 - iou) ** 2
                     logging.info("Frame: %d : IOU for %d, %d: %f", frame_id, i, j, iou)
 
-        matched_tracks_idxs, matched_detections_idxs  = linear_sum_assignment(iou_matrix)
 
+        # ========== Solve the assignment problem using Hungarian algorithm ==========
+
+        matched_tracks_idxs, matched_detections_idxs  = linear_sum_assignment(iou_matrix)
         for track_idx, detection_idx in zip(matched_tracks_idxs, matched_detections_idxs):
             detection = detections[detection_idx]
             track = self.tracks[track_idx]
@@ -83,6 +84,7 @@ class Tracker():
             detection['track_id'] = track.track_id
 
         # ========== Filter out old tracks ==================
+
         matched_track_indices_set = set(matched_tracks_idxs)
         for i, track in enumerate(self.tracks):
             if i in matched_track_indices_set:
