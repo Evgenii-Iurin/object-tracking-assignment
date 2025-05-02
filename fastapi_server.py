@@ -1,13 +1,20 @@
 from fastapi import FastAPI, WebSocket
-from track_4 import track_data, country_balls_amount
+from hungarian_tracker import Tracker
+from metric import metric_fn
+from track_1 import track_data, country_balls_amount
 import asyncio
 import glob
-import random
-from PIL import Image
-from io import BytesIO
-import re
-import base64
-import os
+
+# import random
+# from PIL import Image
+# from io import BytesIO
+# import re
+# import base64
+# import json
+# import os
+
+import logging
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title='Tracker assignment')
 imgs = glob.glob('imgs/*')
@@ -15,7 +22,7 @@ country_balls = [{'cb_id': x, 'img': imgs[x % len(imgs)]} for x in range(country
 print('Started')
 
 
-def tracker_soft(el):
+def tracker_soft(el, tracker: Tracker):
     """
     Необходимо изменить у каждого словаря в списке значение поля 'track_id' так,
     чтобы как можно более длительный период времени 'track_id' соответствовал
@@ -30,9 +37,10 @@ def tracker_soft(el):
     вашего трекера, использовать его в алгоритме трекера запрещено
     - запрещается присваивать один и тот же track_id разным объектам на одном фрейме
     """
-    random.shuffle(el['data'])
-    for i, x in enumerate(el['data']):
-        x['track_id'] = i
+    detections = el['data']
+    frame_id = el['frame_id']
+    el['data'] = tracker.process_frame(detections, frame_id)
+    
     return el
 
 
@@ -64,21 +72,22 @@ def tracker_strong(el):
 async def websocket_endpoint(websocket: WebSocket):
     print('Accepting client connection...')
     await websocket.accept()
-    # отправка служебной информации для инициализации объектов
-    # класса CountryBall на фронте
     await websocket.send_text(str(country_balls))
+    tracker = Tracker()
+    data = []
     for el in track_data:
         await asyncio.sleep(0.5)
-        # TODO: part 1
-        el = tracker_soft(el)
-        # TODO: part 2
+        el = tracker_soft(el, tracker)
+        data.append(el)
+
         # el = tracker_strong(el)
-        # отправка информации по фрейму
         # json_el = json.dumps(el)
-        print(el)
+
         await websocket.send_json(el)
-    # добавьте сюда код рассчета метрики
+    metric = metric_fn(data)
+    print('Metric:', metric)
     print('Bye..')
+
 
 
 # @app.websocket("/ws")

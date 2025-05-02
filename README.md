@@ -4,6 +4,15 @@
 ```
 pip install -r requirements.txt
 ```
+Or more safe
+
+```
+poetry install
+poetry shell
+```
+
+Note : poetry uses `python3.11` or `python3.12`
+
 
 ### Запуск сервера
 Или настройте запуск файла fastapi_server.py как приведено на скриншоте ниже 
