@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from hungarian_algorithm import solve_hungarian_algorithm
 
 logging.basicConfig(level=logging.INFO)
 
@@ -72,7 +73,7 @@ class Tracker():
 
         # ========== Solve the assignment problem using Hungarian algorithm ==========
 
-        matched_tracks_idxs, matched_detections_idxs  = linear_sum_assignment(iou_matrix)
+        matched_tracks_idxs, matched_detections_idxs  = solve_hungarian_algorithm(iou_matrix)
         for track_idx, detection_idx in zip(matched_tracks_idxs, matched_detections_idxs):
             detection = detections[detection_idx]
             track = self.tracks[track_idx]
