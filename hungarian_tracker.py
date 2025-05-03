@@ -1,27 +1,47 @@
 import logging
 import numpy as np
-from scipy.optimize import linear_sum_assignment
+# from scipy.optimize import linear_sum_assignment
 from hungarian_algorithm import solve_hungarian_algorithm
+from kalman_filter import KalmanFilter2D
 
 logging.basicConfig(level=logging.INFO)
 
 class Track():
-    def __init__(self, track_id, bounding_box, frame_id):
+    def __init__(self, track_id, bounding_box, cx, cy, frame_id):
         self.track_id = track_id
         self.bounding_box = bounding_box
         self.frame_id = frame_id
         self.missed = 0
+        self.kalman = KalmanFilter2D(cx, cy)
+
+    def predict(self):
+        predicted_center = self.kalman.predict()
+        w = self.bounding_box[2] - self.bounding_box[0]
+        h = self.bounding_box[3] - self.bounding_box[1]
+        
+        predicted_box = [
+            predicted_center[0] - w/2,  # x_min
+            predicted_center[1] - h/2,  # y_min
+            predicted_center[0] + w/2,  # x_max
+            predicted_center[1] + h/2   # y_max
+        ]
+        
+        return predicted_center, predicted_box
+
+    def update(self, bounding_box, cx, cy):
+        self.bounding_box = bounding_box
+        self.kalman.update([cx, cy])
 
 class Tracker():
     def __init__(self):
         self.track_id = 0
         self.tracks = []
     
-    def create_track(self, bounding_box, frame_id):
+    def create_track(self, bounding_box, cx, cy, frame_id):
         """
         Create a new track with the given bounding box and frame ID
         """
-        track = Track(self.track_id, bounding_box, frame_id)
+        track = Track(self.track_id, bounding_box, cx, cy, frame_id)
         self.tracks.append(track)
         self.track_id += 1
         logging.info("Created new track with ID: %d", track.track_id)
@@ -47,7 +67,7 @@ class Tracker():
             for detection in detections:
                 if len(detection['bounding_box']) == 0:
                     continue
-                track = self.create_track(detection['bounding_box'], frame_id)
+                track = self.create_track(detection['bounding_box'], detection["x"], detection["y"], frame_id)
                 detection['track_id'] = track.track_id
                 
             return detections
@@ -59,27 +79,48 @@ class Tracker():
         # Build the IoU matrix between tracks and detections
         iou_matrix = np.zeros((len(self.tracks), len(detections)))
         
+        # ========== Predict the next position of each track ==========
+        predicted_centers = []
+        predicted_boxes = []
+        for track in self.tracks:
+            center, box = track.predict()
+            predicted_centers.append(center)
+            predicted_boxes.append(box)
+        
         # ========== Calculate IoU for each track and detection pair ==========
-        for i, track in enumerate(self.tracks):
-            for j, detection in enumerate(detections):
+        max_distance_threshold = 20 # threshold for distance in pixels
 
+        for i, track in enumerate(self.tracks):
+            predicted_center = predicted_centers[i]
+            predicted_box = predicted_boxes[i]
+            
+            for j, detection in enumerate(detections):
+                # If the detection is empty, skip it
                 if len(detection['bounding_box']) == 0:
                     iou_matrix[i,j] = 1e6
+                    continue
+                    
+                # Calculate center of detection
+                det_cx = detection["x"]
+                det_cy = detection["y"]
+                
+                # Calculate distance between predicted position and detection
+                distance = np.sqrt((predicted_center[0] - det_cx)**2 + (predicted_center[1] - det_cy)**2)
+                
+                # If distance is too large, this association is unlikely
+                if distance > max_distance_threshold:
+                    iou_matrix[i, j] = 1e6
                 else:
-                    iou = self.calculate_iou(track.bounding_box, detection['bounding_box'])
+                    iou = self.calculate_iou(predicted_box, detection['bounding_box'])
                     iou_matrix[i, j] = (1 - iou) ** 2
-                    logging.info("Frame: %d : IOU for %d, %d: %f", frame_id, i, j, iou)
-
 
         # ========== Solve the assignment problem using Hungarian algorithm ==========
-
         matched_tracks_idxs, matched_detections_idxs  = solve_hungarian_algorithm(iou_matrix)
         for track_idx, detection_idx in zip(matched_tracks_idxs, matched_detections_idxs):
             detection = detections[detection_idx]
             track = self.tracks[track_idx]
-
-            # Update the track with the new bounding box
-            track.bounding_box = detection['bounding_box']
+            
+            track.update(detection["bounding_box"], detection['x'], detection['y'])
             track.frame_id = frame_id
             
             detection['track_id'] = track.track_id
@@ -105,7 +146,7 @@ class Tracker():
             if len(detection['bounding_box']) == 0:
                 continue
             # Create a new track for the unmatched detection
-            track = self.create_track(detection['bounding_box'], frame_id)
+            track = self.create_track(detection['bounding_box'], detection["x"], detection["y"], frame_id)
             detection['track_id'] = track.track_id
 
         logging.info("Frame %d : Tracks after creating new ones: %d", frame_id, len(self.tracks))
