@@ -43,29 +43,7 @@ def solve_hungarian_algorithm(cost_matrix: np.ndarray) -> tuple[np.ndarray, np.n
             break
 
         # Step 4: Cover zeros with minimum number of lines
-        covered_rows = set()
-        covered_cols = set()
-        assigned_rows = [i for i in range(n) if 1 in assignment_matrix[i]]
-        unassigned_rows = [i for i in range(n) if i not in assigned_rows]
-        marked_rows = set(unassigned_rows)
-        marked_cols = set()
-
-        changed = True
-        while changed:
-            changed = False
-            for i in marked_rows.copy():
-                for j in range(n):
-                    if cost_matrix[i][j] == 0 and j not in marked_cols:
-                        marked_cols.add(j)
-                        changed = True
-            for j in marked_cols.copy():
-                for i in range(n):
-                    if assignment_matrix[i][j] == 1 and i not in marked_rows:
-                        marked_rows.add(i)
-                        changed = True
-
-        covered_rows = set(range(n)) - marked_rows
-        covered_cols = marked_cols
+        covered_rows, covered_cols = find_min_line_cover(cost_matrix, assignment_matrix)
 
         # Step 5: Modify matrix
         min_uncovered = np.inf
@@ -92,43 +70,93 @@ def solve_hungarian_algorithm(cost_matrix: np.ndarray) -> tuple[np.ndarray, np.n
 
     return np.array(row_indices), np.array(col_indices)
 
-def greedy_assignment(cost_matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def greedy_assignment(cost_matrix: np.ndarray) -> np.ndarray:
     """
     Greedily assign tasks to workers based on the cost matrix.
+    This improved version tries to maximize the number of assignments.
     
     Args:
         cost_matrix (np.ndarray): The cost matrix for the assignment problem.
         
     Returns:
-        Tuple[np.ndarray, np.ndarray]: The row and column indices of the greedy assignment.
+        np.ndarray: The assignment matrix with 1s at assigned positions.
     """
+    n, m = cost_matrix.shape
+    assignment_matrix = np.zeros((n, m))
     
-    assignment_matrix = np.zeros(cost_matrix.shape)
-    used_columns = set()
+    # Find all positions with zeros
+    zero_positions = []
+    for i in range(n):
+        for j in range(m):
+            if cost_matrix[i, j] == 0:
+                # Store (row, col, count of zeros in row & col)
+                row_zeros = np.sum(cost_matrix[i, :] == 0)
+                col_zeros = np.sum(cost_matrix[:, j] == 0)
+                zero_positions.append((i, j, row_zeros + col_zeros))
     
-    for i in range(cost_matrix.shape[0]):
-        for j in range(cost_matrix.shape[1]):
-            if cost_matrix[i, j] == 0 and j not in used_columns:
-                assignment_matrix[i, j] = 1
-                used_columns.add(j)
-                break
+    # Sort by the number of zeros in corresponding row and column (ascending)
+    # This prioritizes positions with fewer alternative zero options
+    zero_positions.sort(key=lambda x: x[2])
+    
+    used_rows = set()
+    used_cols = set()
+    
+    # Assign greedily based on the sorted positions
+    for i, j, _ in zero_positions:
+        if i not in used_rows and j not in used_cols:
+            assignment_matrix[i, j] = 1
+            used_rows.add(i)
+            used_cols.add(j)
+    
     return assignment_matrix
-    
 
-# if __name__ == "__main__":
-#     print("Test 1 - square matrix")    
-#     cost_matrix = np.array([[4, 2, 8],
-#                              [2, 4, 6],
-#                              [8, 6, 4]])
+def find_min_line_cover(cost_matrix, assignment_matrix):
+    """Find minimum number of lines to cover all zeros"""
+    n = cost_matrix.shape[0]
+    marked_rows = set()
+    marked_cols = set()
     
-#     row_indices, col_indices = solve_hungarian_algorithm(cost_matrix)
-#     print("Row indices:", row_indices)
-#     print("Column indices:", col_indices)
+    # Mark all rows with no assignment
+    for i in range(n):
+        if not any(assignment_matrix[i, :]):
+            marked_rows.add(i)
     
-#     print("Test 2 - non-square matrix")
-#     cost_matrix = np.array([[4, 2, 8, 1],
-#                              [2, 4, 6, 3],
-#                              [8, 6, 4, 5]])
-#     row_indices, col_indices = solve_hungarian_algorithm(cost_matrix)
-#     print("Row indices:", row_indices)
-#     print("Column indices:", col_indices)
+    new_marked = True
+    while new_marked:
+        new_marked = False
+        # Mark columns with zeros in marked rows
+        for i in marked_rows:
+            for j in range(n):
+                if cost_matrix[i, j] == 0 and j not in marked_cols:
+                    marked_cols.add(j)
+                    new_marked = True
+        
+        # Mark rows with assignments in marked columns
+        for j in marked_cols:
+            for i in range(n):
+                if assignment_matrix[i, j] == 1 and i not in marked_rows:
+                    marked_rows.add(i)
+                    new_marked = True
+    
+    # Lines cover all rows not marked and all columns marked
+    cover_rows = set(range(n)) - marked_rows
+    cover_cols = marked_cols
+    
+    return cover_rows, cover_cols
+
+if __name__ == "__main__":
+    print("Test 1 - square matrix")    
+    cost_matrix = np.array([[1.0, 1e6],
+                             [5.81573864e-01, 1e6]])
+    
+    row_indices, col_indices = solve_hungarian_algorithm(cost_matrix)
+    print("Row indices:", row_indices)
+    print("Column indices:", col_indices)
+    
+    print("Test 2 - non-square matrix")
+    cost_matrix = np.array([[4, 2, 8, 1],
+                             [2, 4, 6, 3],
+                             [8, 6, 4, 5]])
+    row_indices, col_indices = solve_hungarian_algorithm(cost_matrix)
+    print("Row indices:", row_indices)
+    print("Column indices:", col_indices)
