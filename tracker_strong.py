@@ -126,11 +126,19 @@ class TrackerStrong():
         # 2.1 Расчет стоимости движения
         for i, track in enumerate(self.tracks):
             track_center = predicted_centers[i]
+            track_box = predicted_boxes[i]
             cov = track.kalman.P[:2, :2]
             
             for j, det in enumerate(valid_detections):
                 det_center = np.array([det['x'], det['y']])
-                
+                det_box = det['bounding_box']
+        
+                # Проверка IoU
+                iou = self.calculate_iou(track_box, det_box)
+                if iou < 0.1:  # Настройте порог по необходимости
+                    motion_cost[i, j] = 1e6
+                    continue
+
                 # Расстояние Махаланобиса
                 try:
                     inv_cov = np.linalg.pinv(cov)
@@ -151,20 +159,25 @@ class TrackerStrong():
 
         for i, track in enumerate(self.tracks):
             track_feats = np.array([f / (np.linalg.norm(f) + 1e-6) for f in track.features])
-            mean_track_feat = track_feats.mean(axis=0)
+            # В разделе 2.2 расчета appearance_cost
+            recent_features = track.features[-10:]  # Используйте последние 10 признаков
+            mean_track_feat = np.mean(recent_features, axis=0)
+            #mean_track_feat = track_feats.mean(axis=0)
             
             for j, det_feat in enumerate(det_features):
                 appearance_cost[i,j] = 1.0 - np.dot(mean_track_feat, det_feat)
 
         # 3. Комбинированная матрица стоимости
         cost_matrix = self.lambda_ * motion_cost + (1 - self.lambda_) * appearance_cost
-        
+
         # 4. Обработка особых случаев
         cost_matrix = np.nan_to_num(cost_matrix, nan=1e6)
         cost_matrix = np.clip(cost_matrix, 0, 1e6)
 
         # 5. Решение задачи назначения
         track_indices, det_indices = solve_hungarian_algorithm(cost_matrix)
+        logging.info(f"Matched tracks: {track_indices}")
+        logging.info(f"Matched detections: {det_indices}")
 
         # 6. Обновление совпавших треков
         updated_tracks = set()
